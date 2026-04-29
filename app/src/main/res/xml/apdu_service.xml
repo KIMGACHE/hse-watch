@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/service_description"
+    android:requireDeviceUnlock="false"> <!-- true로 설정하면 워치 암호나 패턴을 풀어야만 데이터 전송 -->
+    <aid-group android:description="@string/service_description"
+        android:category="other">
+        <aid-filter android:name="F0010203040506"/>
+    </aid-group>
+</host-apdu-service>
