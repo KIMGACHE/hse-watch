@@ -8,19 +8,27 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.remember
 import androidx.core.app.ActivityCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kr.dfinesys.hse_watch.core.CollapseForegroundService
 import kr.dfinesys.hse_watch.core.NotificationHelper
 import kr.dfinesys.hse_watch.data.Api
 import kr.dfinesys.hse_watch.presentation.theme.Hse_watchTheme
 import kr.dfinesys.hse_watch.util.getOrCreateDeviceId
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 
 class MainActivity : ComponentActivity() {
+    private var isSyncing = false;
+    private var accessState by mutableStateOf(Api.AccessState(false))
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -43,29 +51,41 @@ class MainActivity : ComponentActivity() {
         // 이 기기의 고유 watchId 가져오기
         val watchId = getOrCreateDeviceId(this)
 
+        Log.d("TEST", "데이터 전송: $watchId")
+
         // FCM 토큰을 가져와 서버에 기기 등록 (최초 1회만 수행)
         FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
             val prefs = getSharedPreferences("watch_prefs", Context.MODE_PRIVATE)
             val isRegistered = prefs.getBoolean("is_registered", false)
-            Log.d("FCM", "토큰: $token")
+
             if (!isRegistered) {
                 CoroutineScope(Dispatchers.IO).launch {
                     runCatching {
                         Api.registerDevice(watchId, token)
-                        // 등록 성공 시 플래그 저장 → 이후 재등록 방지
-                        prefs.edit().putBoolean("is_registered", true).apply()
+
+                        prefs.edit()
+                            .putBoolean("is_registered", true)
+                            .apply()
+
+                        withContext(Dispatchers.Main) {
+                            syncStateFromServer(watchId)
+                        }
                     }
                 }
+            } else {
+                syncStateFromServer(watchId)
             }
         }
-
-        // 앱 실행 시 입퇴실 상태 동기화
-        syncStateFromServer(watchId);
 
         setTheme(android.R.style.Theme_DeviceDefault)
         setContent {
             Hse_watchTheme {
-                MonitorScreen(watchId = watchId)
+                val currentState by remember { mutableStateOf(accessState) }
+                MonitorScreen(
+                    watchId = watchId,
+                    companyName = accessState.companyName,
+                    userName = accessState.userName
+                )
             }
         }
 
@@ -76,9 +96,13 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
 
-        val watchId = getOrCreateDeviceId(this)
-        // 화면이 다시 활성화될 때마다 서버에서 최신 입퇴실 상태를 동기화
-        syncStateFromServer(watchId)
+        val prefs = getSharedPreferences("watch_prefs", Context.MODE_PRIVATE)
+        val isRegistered = prefs.getBoolean("is_registered", false)
+
+        if (isRegistered) {
+            val watchId = getOrCreateDeviceId(this)
+            syncStateFromServer(watchId)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -100,19 +124,21 @@ class MainActivity : ComponentActivity() {
     // 서버로부터 해당 워치의 IN/OUT 상태를 불러옴
     private fun handleNfcEvent(watchId: String) {
         CoroutineScope(Dispatchers.IO).launch {
-            val isInside = Api.getAccessState(watchId)
-            applyAccessState(isInside)
+            val state = Api.handleNfc(watchId)
+            withContext(Dispatchers.Main) {
+                applyAccessState(state)
+            }
         }
     }
 
     // 해당 워치의 IN/OUT 상태를 보고 쓰러짐 감지를 활성화/비활성화 함
-    private fun applyAccessState(isInside: Boolean) {
-        // SharedPreferences에 현재 상태 저장 (서비스 재시작 시 복원에 사용됨)
+    private fun applyAccessState(state: Api.AccessState) {
+        accessState = state
         getSharedPreferences("watch_prefs", Context.MODE_PRIVATE)
-            .edit().putBoolean("is_inside", isInside).apply()
+            .edit().putBoolean("is_inside", state.isInside).apply()
 
-        if (isInside) {
-            Log.d("STATE", "입실 → 감지 시작")
+        if (state.isInside) {
+            Log.d("STATE", "입실 → 감지 시작 / ${state.companyName} / ${state.userName}")
             CollapseForegroundService.start(this)
         } else {
             Log.d("STATE", "퇴실 → 감지 종료")
@@ -133,9 +159,14 @@ class MainActivity : ComponentActivity() {
 
     // 앱 실행시 서버로부터 해당 워치의 IN/OUT 상태를 불러옴
     private fun syncStateFromServer(watchId: String) {
+        if (isSyncing) return
+        isSyncing = true
         CoroutineScope(Dispatchers.IO).launch {
-            val isInside = Api.getAccessState(watchId)
-            applyAccessState(isInside)
+            val state = Api.getAccessState(watchId)
+            withContext(Dispatchers.Main) {
+                applyAccessState(state)
+                isSyncing = false
+            }
         }
     }
 }

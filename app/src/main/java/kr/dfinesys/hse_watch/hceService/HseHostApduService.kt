@@ -1,14 +1,18 @@
 package kr.dfinesys.hse_watch.hceService
 
+import android.content.Context
+import android.health.connect.datatypes.units.Power
 import android.nfc.cardemulation.HostApduService
 import android.os.Bundle
+import android.os.PowerManager
 import android.util.Log
 import kr.dfinesys.hse_watch.util.getOrCreateDeviceId
 
 /**
  * HCE(Host-based Card Emulation) 서비스
  * NFC 리더기가 이 워치에 접근하면, watchId를 APDU 응답으로 전송한다.
- * AndroidManifest에 등록된 AID와 일치하는 SELECT 명령이 수신될 때 동작한다.
+ * SELECT AID 명령에는 성공 응답만 반환하고,
+ * GET DATA 명령에 watchId를 반환한다.
  */
 class HseHostApduService : HostApduService() {
 
@@ -21,27 +25,48 @@ class HseHostApduService : HostApduService() {
         private val STATUS_FAILED = byteArrayOf(0x6F.toByte(), 0x00.toByte())
     }
 
+    private lateinit var wakeLock: PowerManager.WakeLock
+    override fun onCreate() {
+        super.onCreate()
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "hse:hce-wakelock")
+    }
+
     /**
      * NFC 리더기로부터 APDU 명령을 수신했을 때 호출된다.
-     * watchId를 UTF-8 바이트로 변환한 뒤 SUCCESS 상태 코드와 함께 반환한다.
+     * SELECT AID(0xA4): 성공 응답만 반환
+     * GET DATA(0xCA): watchId를 UTF-8 바이트로 변환한 뒤 SUCCESS 상태 코드와 함께 반환한다.
      *
-     * @param commandApdu 리더기가 보낸 APDU 명령 바이트 배열 (AID 포함)
+     * @param commandApdu 리더기가 보낸 APDU 명령 바이트 배열
      * @param extra 추가 정보 (현재 미사용)
-     * @return watchId 바이트 배열 + 상태 코드 (성공 또는 실패)
+     * @return 상태 코드 또는 watchId 바이트 배열 + 상태 코드
      */
     override fun processCommandApdu(commandApdu: ByteArray?, extra: Bundle?): ByteArray? {
-        // commandApdu가 AID, 어플 식별하는 16바이트
+        if (!wakeLock.isHeld) wakeLock.acquire(5_000L)
+
         if (commandApdu == null) return STATUS_FAILED
 
-        Log.d(TAG, "리더기 명령 : ${byteArrayToHexString(commandApdu)}")
+        Log.d(TAG, "리더기 명령: ${byteArrayToHexString(commandApdu)}")
 
-        val watchId = getOrCreateDeviceId(this)
-        val responsePayload = watchId.toByteArray(Charsets.UTF_8)
+        return when {
+            // SELECT AID (INS = 0xA4) → 성공 응답만 반환
+            commandApdu[1] == 0xA4.toByte() -> {
+                Log.d(TAG, "SELECT AID → OK")
+                STATUS_SUCCESS
+            }
 
-        Log.d(TAG, "데이터 전송: $watchId")
+            // GET DATA (INS = 0xCA) → watchId 반환
+            commandApdu[1] == 0xCA.toByte() -> {
+                val watchId = getOrCreateDeviceId(this)
+                Log.d(TAG, "GET DATA → watchId 전송: $watchId")
+                watchId.toByteArray(Charsets.UTF_8) + STATUS_SUCCESS
+            }
 
-        // 페이로드 뒤에 SUCCESS 코드를 붙여 리더기로 전송
-        return responsePayload + STATUS_SUCCESS
+            else -> {
+                Log.d(TAG, "알 수 없는 명령: ${byteArrayToHexString(commandApdu)}")
+                STATUS_FAILED
+            }
+        }
     }
 
     /**
@@ -53,12 +78,13 @@ class HseHostApduService : HostApduService() {
      */
     override fun onDeactivated(reason: Int) {
         Log.d(TAG, "연결 해제. 사유 코드: $reason")
+        if (wakeLock.isHeld) wakeLock.release();
     }
 
     /**
      * 바이트 배열을 16진수 문자열로 변환하는 유틸 함수 (로그 출력용)
      */
     private fun byteArrayToHexString(bytes: ByteArray): String {
-        return bytes.joinToString("") {String.format("%02x", it)}
+        return bytes.joinToString("") { String.format("%02x", it) }
     }
 }

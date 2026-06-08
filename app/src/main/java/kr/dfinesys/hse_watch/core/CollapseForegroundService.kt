@@ -115,7 +115,12 @@ class CollapseForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START   -> startMonitoring()
-            ACTION_STOP    -> stopSelf()
+            ACTION_STOP -> {
+                inactivityJob?.cancel()  // ← 타이머 즉시 취소
+                warning = false
+                broadcastWarning(false)
+                stopSelf()
+            }
             ACTION_DISMISS -> dismissWarning()
             null -> {
                 // 시스템에 의해 서비스가 재시작된 경우, 저장된 입실 상태로 복원

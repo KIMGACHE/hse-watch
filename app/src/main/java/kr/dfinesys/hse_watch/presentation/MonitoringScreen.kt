@@ -35,7 +35,9 @@ import kr.dfinesys.hse_watch.core.CollapseForegroundService
  * @param watchId 이 기기의 고유 디바이스 ID
  */
 @Composable
-fun MonitorScreen(watchId: String) {
+fun MonitorScreen(watchId: String,
+                  companyName: String,
+                  userName: String) {
     val context = LocalContext.current
     // 원형 화면 여부에 따라 좌우 패딩 조정
     val sidePad = if (LocalConfiguration.current.isScreenRound) 20.dp else 12.dp
@@ -117,10 +119,23 @@ fun MonitorScreen(watchId: String) {
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // 업체명 + 사용자명 표시 (입실 상태일 때만 표시하거나 항상 표시 가능)
+                    if (companyName.isNotEmpty() || userName.isNotEmpty()) {
+                        Text(
+                            text = "$companyName  $userName",
+                            color = titleColor,
+                            style = MaterialTheme.typography.title3,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
+
                     Text(
                         text = if (warning) "위험" else "사용자 위험 감지",
-                        color = titleColor,
-                        style = MaterialTheme.typography.title2.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color(0xCCFFFFFF),
+                        style = MaterialTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
                         textAlign = TextAlign.Center
                     )
 

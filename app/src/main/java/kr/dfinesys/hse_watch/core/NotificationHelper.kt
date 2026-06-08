@@ -110,7 +110,11 @@ object NotificationHelper {
                 CHANNEL_ID,
                 "안전 경보",
                 NotificationManager.IMPORTANCE_HIGH
-            ).apply { description = "HSE 위험 감지 알림" }
+            ).apply {
+                description = "HSE 위험 감지 알림"
+                vibrationPattern = longArrayOf(0, 500, 300, 500, 300)  // ← 추가
+                enableVibration(true)  // ← 추가
+            }
             mgr.createNotificationChannel(channel)
         }
     }
@@ -161,6 +165,8 @@ object NotificationHelper {
             .setAutoCancel(true)
             .setDeleteIntent(dismissPendingIntent)   // 스와이프 제거 시 호출
             .setContentIntent(openPendingIntent)     // 탭 시 호출
+            .setVibrate(longArrayOf(0, 500, 300, 500, 300))  // ← 추가
+            .setOngoing(true)  // ← 스와이프로 제거 불가, 직접 해제해야 함
 
         NotificationManagerCompat.from(context).notify(id, builder.build())
     }
