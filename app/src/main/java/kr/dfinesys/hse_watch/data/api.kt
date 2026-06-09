@@ -27,6 +27,7 @@ object Api {
 
     data class AccessState(
         val isInside: Boolean,
+        val isAssigned: Boolean = false,    // ASSIGNED 상태 (배정됐지만 미입장)
         val companyName: String = "",
         val userName: String = ""
     )
@@ -85,6 +86,7 @@ object Api {
             val data = json.getJSONObject("data")
             AccessState(
                 isInside = data.optBoolean("inside", false),
+                isAssigned = data.optBoolean("assigned", false),
                 companyName = data.optString("companyName", ""),
                 userName = data.optString("userName", "")
             )

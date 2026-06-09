@@ -139,9 +139,17 @@ class MainActivity : ComponentActivity() {
 
         if (state.isInside) {
             Log.d("STATE", "입실 → 감지 시작 / ${state.companyName} / ${state.userName}")
+            // 입실 시: 화면 켜짐 유지 플래그 해제
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             CollapseForegroundService.start(this)
+        } else if (state.isAssigned) {
+            Log.d("STATE", "작업 배정됨 -> 화면 유지 (NFC 태그 대기)")
+            // 배정 상태: 화면을 계속 켜둬서 HCE가 동작하도록
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            CollapseForegroundService.stop(this)
         } else {
             Log.d("STATE", "퇴실 → 감지 종료")
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             CollapseForegroundService.stop(this)
         }
     }
