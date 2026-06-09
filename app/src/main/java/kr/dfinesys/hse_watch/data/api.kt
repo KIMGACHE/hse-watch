@@ -59,6 +59,7 @@ object Api {
             val data = JSONObject(response).getJSONObject("data")
             AccessState(
                 isInside = data.optString("type") == "IN",
+                isAssigned = data.optString("type") == "OUT",
                 companyName = data.optString("companyName", ""),
                 userName = data.optString("userName", "")
             )
